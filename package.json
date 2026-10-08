@@ -1,6 +1,6 @@
 {
   "name": "@floatra/generic-rest-adapter",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Configuration-driven Mode B adapter — connects any ERP with outbound HTTP capability to the Floatra Integration Gateway via a JSON config file. No ERP-specific code.",
   "license": "MIT",
   "private": true,

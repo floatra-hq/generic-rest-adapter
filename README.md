@@ -19,7 +19,7 @@ linux/arm64), tagged with each release version (see `CHANGELOG.md`) and
 ```bash
 # 1. Start from the example config bundled in the image
 mkdir -p configs
-docker run --rm ghcr.io/floatra-hq/generic-rest-adapter:0.1.0 \
+docker run --rm ghcr.io/floatra-hq/generic-rest-adapter:0.1.1 \
   cat /app/configs.example/example.json > configs/my-platform.json
 chmod 600 configs/my-platform.json   # the adapter refuses group/world-readable configs
 
@@ -27,7 +27,7 @@ chmod 600 configs/my-platform.json   # the adapter refuses group/world-readable 
 
 # 3. Validate before running (no server, no network; exits non-zero on any problem)
 docker run --rm -v "$PWD/configs:/configs:ro" -e CONFIG_DIR=/configs \
-  ghcr.io/floatra-hq/generic-rest-adapter:0.1.0 \
+  ghcr.io/floatra-hq/generic-rest-adapter:0.1.1 \
   node dist/main.js --validate-only
 
 # 4. Run it (the named volume keeps the fallback audit log across restarts)
@@ -37,7 +37,7 @@ docker run -d \
   -e CONFIG_DIR=/configs \
   -e ALLOW_FALLBACK_ON_CREDIT_OVERRIDE=false \
   -p 3100:3100 \
-  ghcr.io/floatra-hq/generic-rest-adapter:0.1.0
+  ghcr.io/floatra-hq/generic-rest-adapter:0.1.1
 ```
 
 Every fallback decision taken while Floatra is unreachable is appended to
@@ -162,6 +162,8 @@ Headers:
 | `X-Floatra-Delivery-Attempt` | 1-based retry counter (informational) |
 
 Invalid signature or stale timestamp → 403. A **duplicate** event id is answered **200** `{ "accepted": true, "duplicate": true }` — core treats any non-2xx as a failed delivery and would otherwise retry it until dead-lettered.
+
+An event from the **other realm** is answered **200** `{ "accepted": true, "ignored": true }` and never reaches your ERP. A platform's sandbox and live keys share the webhook destination and the signing secret, so only the body's `livemode` says which realm an event is about: a `live_pk_` key takes only `livemode: true`, any other (sandbox) key only `livemode: false` (an event with no `livemode`, queued before core added it, is accepted for a sandbox key and dropped for a live one). The undelivered-webhook poller applies the same rule and acknowledges what it drops.
 
 The body is a **flat camelCase** JSON object. The adapter wraps it as `{ event_id, event_type, occurred_at, data: <body> }`, so `outbound.event_mappings[*].field_mappings` address core fields as **`$.data.<field>`** (e.g. `$.data.externalOrderId`).
 

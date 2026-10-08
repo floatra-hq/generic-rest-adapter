@@ -5,6 +5,20 @@ Versions follow `package.json`. Source: git tag `v<version>` on
 `github.com/floatra-hq/generic-rest-adapter`; image:
 `ghcr.io/floatra-hq/generic-rest-adapter:<version>`.
 
+## [0.1.1] - 2026-10-08
+
+Found by the staging pass against staging-api (2026-10-08).
+
+- **Drops events from the other realm.** A platform's sandbox and live keys
+  share the webhook destination and the signing secret, and the adapter never
+  read `livemode`: a sandbox-keyed adapter forwarded a `livemode: true` event
+  to the ERP, and a live adapter would forward sandbox test events (a sandbox
+  `order.credit_approved` fires `release_to_warehouse` for real). The webhook
+  receiver now answers such an event 200 `{ accepted, ignored }` without
+  delivering it, and the undelivered-webhook poller acknowledges it without
+  replaying it. Same rule as the Odoo and ERPNext connectors (`live_pk_` key ⇔
+  `livemode: true`; an unmarked event is accepted for a sandbox key only).
+
 ## [0.1.0]
 
 First public release (source and image). MIT licence.

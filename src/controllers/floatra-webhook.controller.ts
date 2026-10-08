@@ -20,6 +20,7 @@ import {
   verifyFloatraSignature,
 } from '../webhook/hmac-verifier';
 import { toWebhookEvent } from '../webhook/webhook-event';
+import { isLiveKey, webhookRealmMatches } from '../webhook/webhook-realm';
 
 /**
  * POST /adapter/:platformId/floatra-webhook
@@ -32,6 +33,10 @@ import { toWebhookEvent } from '../webhook/webhook-event';
  *   2. Replay-window: |now - X-Floatra-Timestamp| <= 5 min     (P0-9)
  *   3. Event-ID dedup: SETNX (X-Floatra-Event-ID, 24h TTL)     (P0-10)
  *   4. JSON parse + shape check (X-Floatra-Event-ID + body.event)
+ *
+ * Then the realm check: an event whose `livemode` is not the configured
+ * key's realm is answered 200 `{ accepted, ignored }` and never reaches the
+ * ERP (see `webhook-realm.ts`).
  *
  * Core sends a FLAT camelCase payload ({ event, loanId, amount, ...,
  * timestamp }) with the event id in X-Floatra-Event-ID; it is wrapped
@@ -60,7 +65,7 @@ export class FloatraWebhookController {
     @Headers('x-floatra-event-id') eventIdHeader: string | undefined,
     @Headers('x-floatra-delivery-attempt') deliveryAttempt: string | undefined,
     @Req() req: Request & { rawBody?: Buffer },
-  ): Promise<{ accepted: true; duplicate?: true }> {
+  ): Promise<{ accepted: true; duplicate?: true; ignored?: true }> {
     const config = this.loader.getByPlatform(platformId);
     if (!config) {
       throw new NotFoundException(`Unknown platform_id: ${platformId}`);
@@ -104,6 +109,17 @@ export class FloatraWebhookController {
       );
     }
     const event = toWebhookEvent(eventIdHeader, payload);
+
+    // Sandbox and live keys share the destination and the signing secret:
+    // only `livemode` says which realm this event is about. Answered 200 so
+    // core does not retry an event this adapter must never apply.
+    if (!webhookRealmMatches(payload, isLiveKey(config.api_key))) {
+      this.logger.warn(
+        `Ignored event ${event.event_id} (${event.event_type}) for platform ${platformId}: ` +
+          `livemode=${String(payload.livemode)} is not this key's realm`,
+      );
+      return { accepted: true, ignored: true };
+    }
 
     // P0-10: event-ID dedup. Core (#1220) treats any non-2xx as a failed
     // delivery, so a duplicate is acknowledged with 200; a 409 would be

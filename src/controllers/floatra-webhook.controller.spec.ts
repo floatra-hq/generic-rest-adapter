@@ -25,10 +25,19 @@ describe('FloatraWebhookController', () => {
   afterEach(() => jest.useRealTimers());
 
   function makeController(
-    opts: { isDuplicate?: boolean; translatorThrows?: boolean } = {},
+    opts: {
+      isDuplicate?: boolean;
+      translatorThrows?: boolean;
+      apiKey?: string;
+    } = {},
   ) {
+    // The core fixtures are live deliveries (`livemode: true`), so the
+    // default config holds a live key.
     const loader = {
-      getByPlatform: jest.fn().mockReturnValue({ webhook_secret: f.secret }),
+      getByPlatform: jest.fn().mockReturnValue({
+        webhook_secret: f.secret,
+        api_key: opts.apiKey ?? 'live_pk_test',
+      }),
     };
     const translator = {
       translateAndDeliver: jest.fn<
@@ -89,6 +98,21 @@ describe('FloatraWebhookController', () => {
 
   // Core treats non-2xx as failure (#1220): a duplicate must be a 200,
   // or core retries it to dead-letter.
+  it('ignores (200) an event from the other realm and never routes it', async () => {
+    // Staging pass 2026-10-08: a sandbox-keyed adapter forwarded a
+    // livemode=true event to the ERP. Sandbox and live keys share the
+    // destination and the signing secret, so the signature cannot tell.
+    const { controller, translator, dedup } = makeController({
+      apiKey: 'sbx_pk_test',
+    });
+    await expect(call(controller)).resolves.toEqual({
+      accepted: true,
+      ignored: true,
+    });
+    expect(translator.translateAndDeliver).not.toHaveBeenCalled();
+    expect(dedup.isDuplicate).not.toHaveBeenCalled();
+  });
+
   it('answers a duplicate with 200 and does not re-route it', async () => {
     const { controller, translator } = makeController({ isDuplicate: true });
     await expect(call(controller)).resolves.toEqual({

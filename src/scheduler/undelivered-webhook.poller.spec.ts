@@ -15,11 +15,14 @@ import { loadResponseFixture } from '../contract/fixtures';
  */
 
 describe('UndeliveredWebhookPoller (P2-18)', () => {
-  function buildConfig(platformId: string): FloatraAdapterConfig {
+  function buildConfig(
+    platformId: string,
+    apiKey = 'api-key',
+  ): FloatraAdapterConfig {
     return {
       erp_type: 'GENERIC',
       platform_id: platformId,
-      api_key: 'api-key',
+      api_key: apiKey,
       webhook_secret: 'secret',
       floatra_gateway_url: 'https://gw.test',
       inbound: {} as never,
@@ -88,6 +91,7 @@ describe('UndeliveredWebhookPoller (P2-18)', () => {
     ],
     translatorError = null as Error | null,
     deduped = false,
+    apiKey = 'api-key',
   }: {
     platformIds?: string[];
     pages?: Array<{
@@ -99,8 +103,11 @@ describe('UndeliveredWebhookPoller (P2-18)', () => {
     }>;
     translatorError?: Error | null;
     deduped?: boolean;
+    apiKey?: string;
   } = {}) {
-    const configs = new Map(platformIds.map((p) => [p, buildConfig(p)]));
+    const configs = new Map(
+      platformIds.map((p) => [p, buildConfig(p, apiKey)]),
+    );
     const loader = {
       listPlatformIds: jest.fn().mockReturnValue(platformIds),
       getByPlatform: jest.fn((id: string) => configs.get(id)),
@@ -170,7 +177,8 @@ describe('UndeliveredWebhookPoller (P2-18)', () => {
 
   it('replays a core undelivered row as the flat-payload envelope', async () => {
     const page = loadResponseFixture('response-undelivered').body.data; // unwrapped by the client (Task 4)
-    const { poller, floatra, translator } = build();
+    // The fixture is a live event (`livemode: true`), so a live key replays it.
+    const { poller, floatra, translator } = build({ apiKey: 'live_pk_test' });
     floatra.listUndelivered.mockResolvedValueOnce(page);
     await poller.pollOnce();
     expect(translator.translateAndDeliver).toHaveBeenCalledWith(
@@ -206,6 +214,36 @@ describe('UndeliveredWebhookPoller (P2-18)', () => {
       expect.anything(),
     );
     expect(floatra.acknowledgeWebhook).toHaveBeenCalledTimes(1);
+  });
+
+  it('never applies an event from the other realm, and ACKs it', async () => {
+    const { poller, translator, floatra } = build({
+      pages: [
+        {
+          data: [
+            event({
+              payload: {
+                event: 'merchant.reorder_locked',
+                merchantId: 'm-1',
+                livemode: true,
+                timestamp: '2026-06-01T08:59:00Z',
+              },
+            }),
+          ],
+          total: 1,
+          offset: 0,
+          limit: 50,
+          has_more: false,
+        },
+      ],
+    });
+    const result = await poller.pollOnce();
+    expect(result.replayed).toBe(0);
+    expect(translator.translateAndDeliver).not.toHaveBeenCalled();
+    expect(floatra.acknowledgeWebhook).toHaveBeenCalledWith(
+      expect.objectContaining({ platform_id: 'plat-A' }),
+      'evt-1',
+    );
   });
 
   it('skips translate when the dedup cache already saw the event, but still ACKs', async () => {

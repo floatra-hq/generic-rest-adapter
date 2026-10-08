@@ -22,10 +22,16 @@ const example = JSON.parse(
   readFileSync(join(__dirname, '../../configs/example.json'), 'utf8'),
 ) as FloatraAdapterConfig;
 
-async function deliver(name: string): Promise<Record<string, unknown>> {
+async function deliver(
+  name: string,
+  apiKey = 'live_pk_contract_fixture',
+): Promise<Record<string, unknown>> {
   const fixture = loadWebhookFixture(name);
+  // Core renders the fixtures as live deliveries (`livemode: true`), so they
+  // are delivered under a live key; a sandbox key must drop them.
   const config: FloatraAdapterConfig = {
     ...example,
+    api_key: apiKey,
     webhook_secret: fixture.secret,
   };
   const delivered: Record<string, unknown>[] = [];
@@ -65,7 +71,7 @@ async function deliver(name: string): Promise<Record<string, unknown>> {
   } finally {
     jest.useRealTimers();
   }
-  expect(delivered).toHaveLength(1);
+  expect(delivered).toHaveLength(apiKey.startsWith('live_pk_') ? 1 : 0);
   return delivered[0];
 }
 
@@ -106,6 +112,12 @@ describe('configs/example.json against core-rendered webhooks', () => {
       }),
     );
     expect(emptyValues(body)).toEqual([]);
+  });
+
+  it('a sandbox key never forwards a live delivery to the ERP', async () => {
+    await expect(
+      deliver('webhook-order.credit_approved', 'sbx_pk_contract_fixture'),
+    ).resolves.toBeUndefined();
   });
 
   it('merchant.reorder_locked tells the ERP WHICH customer to block', async () => {

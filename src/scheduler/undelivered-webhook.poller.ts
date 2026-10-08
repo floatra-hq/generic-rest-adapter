@@ -16,6 +16,7 @@ import {
 import { OutboundTranslatorService } from '../translators/outbound-translator.service';
 import { EventDedupService } from '../webhook/event-dedup.service';
 import { FloatraAdapterConfig } from '../config/config.types';
+import { isLiveKey, webhookRealmMatches } from '../webhook/webhook-realm';
 import { toWebhookEvent } from '../webhook/webhook-event';
 import { REDIS_CLIENT } from '../common/redis.module';
 
@@ -198,6 +199,17 @@ export class UndeliveredWebhookPoller implements OnModuleInit, OnModuleDestroy {
       event.payload ?? {},
       event.event_type,
     );
+
+    // Same realm rule as the live receiver: an event from the other realm
+    // is never applied, and is acknowledged so it stops being listed.
+    if (!webhookRealmMatches(event.payload ?? {}, isLiveKey(config.api_key))) {
+      this.logger.warn(
+        `Ignored replay of event ${event.event_id} (${event.event_type}) for ` +
+          `platform ${config.platform_id}: not this key's realm (livemode)`,
+      );
+      await this.tryAck(config, event.event_id);
+      return false;
+    }
 
     try {
       await this.translator.translateAndDeliver(envelope, config);
