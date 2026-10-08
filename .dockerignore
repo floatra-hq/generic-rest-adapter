@@ -1,0 +1,7 @@
+# Only the files the Dockerfile COPYs belong in the build context.
+node_modules
+dist
+coverage
+.env
+.env.*
+*.log

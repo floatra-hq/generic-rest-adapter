@@ -1,0 +1,10 @@
+dist/
+node_modules/
+.env
+*.log
+
+# Distributor configs ARE per-deployment secrets — keep them out
+# of git. The /configs/example.json template is the only file
+# committed.
+configs/*.json
+!configs/example.json

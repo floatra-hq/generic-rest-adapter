@@ -1,0 +1,81 @@
+{
+  "erp_type": "SAGE_300",
+  "platform_id": "plat_example",
+  "api_key": "REPLACE_WITH_FLOATRA_API_KEY",
+  "webhook_secret": "REPLACE_WITH_PER_PLATFORM_WEBHOOK_SECRET",
+  "floatra_gateway_url": "https://api.floatra.com/v1/partner",
+  "unavailability_fallback": "BLOCK_CREDIT_ORDERS",
+
+  "inbound": {
+    "auth": {
+      "type": "api_key",
+      "header_name": "x-erp-secret",
+      "api_key": "REPLACE_WITH_SHARED_INBOUND_KEY"
+    },
+    "field_mappings": {
+      "external_order_id": "$.OrderHeader.OrderId",
+      "external_merchant_id": "$.OrderHeader.CustomerCode",
+      "amount": "$.OrderHeader.Total",
+      "amount_unit": "NAIRA",
+      "agent_id": "$.OrderHeader.SalespersonCode",
+      "delivery_date": "$.OrderHeader.RequestedDeliveryDate",
+      "category": "$.OrderHeader.CustomerGroup"
+    },
+    "category_mappings": {
+      "BEVERAGES": "FMCG",
+      "DAIRY": "FMCG",
+      "GROCERY": "FMCG",
+      "PHARMACY": "PHARMACY",
+      "GENERAL": "OTHER"
+    },
+    "trigger_events": {
+      "order_pending_credit": {
+        "condition": "$.OrderHeader.Status == 'Pending' && $.OrderHeader.PaymentMethod == 'Credit'",
+        "floatra_action": "initiate_order"
+      }
+    },
+    "response_mode": "sync"
+  },
+
+  "outbound": {
+    "erp_webhook_url": "https://erp.example.com/floatra/webhook",
+    "erp_auth": {
+      "type": "api_key",
+      "header_name": "x-floatra-event",
+      "api_key": "REPLACE_WITH_ERP_RECEIVER_KEY"
+    },
+    "event_mappings": {
+      "order.credit_approved": {
+        "erp_event_name": "credit_approved",
+        "field_mappings": {
+          "external_order_id": "$.data.externalOrderId",
+          "floatra_loan_id": "$.data.loanId",
+          "approved_amount": "$.data.amount",
+          "due_date": "$.data.dueDate"
+        },
+        "update_fields": [
+          { "erp_field": "OrderHeader.PaymentTerms", "floatra_field": "$.data.tenureDays" }
+        ],
+        "trigger_action": "release_to_warehouse"
+      },
+      "order.disbursed": {
+        "erp_event_name": "credit_disbursed",
+        "field_mappings": {
+          "external_order_id": "$.data.externalOrderId",
+          "floatra_loan_id": "$.data.loanId",
+          "amount": "$.data.amount"
+        }
+      }
+    },
+    "on_reorder_locked": {
+      "block_merchant_orders": true,
+      "update_merchant_field": "Customer.CreditHold",
+      "update_merchant_value": true
+    },
+    "on_reorder_unlocked": {
+      "unblock_merchant_orders": true,
+      "update_merchant_field": "Customer.CreditHold",
+      "update_merchant_value": false
+    }
+  }
+}
